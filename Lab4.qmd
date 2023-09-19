@@ -1,0 +1,202 @@
+---
+title: Lab4
+author: Adaeze Obinelo
+format:
+  html:
+    embed-resources: true
+---
+
+## Step 1
+
+```{r}
+library(tidyverse)
+library(cowplot)
+library(data.table)
+library(dplyr)
+met2 <-data.table::fread("met_all.gz")
+str(met2)
+met2 <- met[met$temp > -17]
+
+met2 %>% 
+  filter(!is.na(temp))
+met2 %>% 
+  filter(!is.na(rh))
+met2 %>% 
+  filter(!is.na(wind.sp))
+met2 %>% 
+  filter(!is.na(vis.dist))
+met2 %>% 
+  filter(!is.na(dew.point))
+met2 %>% 
+  filter(!is.na(lat))
+met2 %>% 
+  filter(!is.na(lon))
+met2 %>% 
+  filter(!is.na(elev))
+
+summary(met2$rh)
+summary(met2$wind.sp)
+summary(met2$vis.dist)
+summary(met2$dew.point)
+summary(met2$lat)
+summary(met2$lon)
+
+summary(met2)
+
+met2_no_NA <- na.omit(met2)
+```
+
+## Step 2
+
+NA's removed in step 1 and 2 to this dataset
+
+```{r}
+met2_no_NA$Date <- as.Date(paste(met2_no_NA$year, met2_no_NA$month, met2_no_NA$day, sep = "-"))
+met2_no_NA$week <- data.table(week(met2_no_NA$Date))
+filter(met2_no_NA, week <32 & day < 7)
+
+met_avg <- met2_no_NA[,.(
+  temp     = mean(temp,na.rm=TRUE),
+  rh       = mean(rh,na.rm=TRUE),
+  wind.sp  = mean(wind.sp,na.rm=TRUE),
+  vis.dist = mean(vis.dist,na.rm=TRUE),
+  dew.point = mean(dew.point,na.rm=TRUE),
+  lat      = mean(lat),
+  lon      = mean(lon), 
+  elev     = mean(elev,na.rm=TRUE)
+), by=c("USAFID", "day")]
+
+met_avg[, region   := fifelse(lon > -98, "east", "west")]
+met_avg[, elev_cat := fifelse(elev > 252, "high", "low")]
+```
+
+## Step 3
+
+NA's removed in step 1 and 2 to this dataset
+
+```{r}
+
+ggplot(met_avg, aes(y = dew.point, x = 1, color = region)) +
+  geom_violin(scale = "count") +
+  facet_wrap(~region)
+
+ggplot(met_avg, aes(y = wind.sp, x = 1, color = region)) +
+  geom_violin(scale = "count") +
+  facet_wrap(~region)
+
+ggplot(met_avg, aes(y = dew.point / wind.sp, x = 1, color = region)) +
+  geom_violin(scale = "count") +
+  facet_wrap(~region)
+
+```
+
+Plot 1 and 2: By setting x to 1, violin plot areas correspond directly to the frequency of observations in the two regions. In plot 2, this area corresponds to frequency of average wind speeds and in 1, the frequency of average dew points. We see that in the East the wind speed tends to be lower and the dew point tends to be higher compared to the case in the west.
+
+## Step 4
+
+NA's removed in step 1 and 2 to this dataset
+
+```{r}
+ggplot(data = met_avg) +
+  geom_point(mapping = aes(x = dew.point, y = wind.sp, color = region), position = "jitter")+
+  geom_smooth(mapping = aes(x = dew.point, y = wind.sp, linetype = region), method = "lm")
+
+
+```
+
+Jitter graph has much more space between points in comparison to the original plot.
+
+## Step 5
+
+NA's removed in step 1 and 2 to this dataset
+
+```{r}
+met_avg[!is.na(region)] %>%
+  ggplot() + 
+  geom_bar(mapping = aes(x = elev_cat, fill = region), position = "dodge") +
+  labs(x = "Elevation", title = "Boxplot of Elevation by Region")
+```
+
+Most of the low elevation observations occurred in the east
+
+## Step 6
+
+NA's removed in step 1 to this dataset
+
+```{r}
+library(gapminder)
+met_avg %>%
+  ggplot(aes(x = region, y = wind.sp, fill = region)) +
+  stat_summary(fun.data = "mean_sdl", geom = "bar") +
+  stat_summary(fun.data = "mean_sdl", geom = "errorbar", width = 0.5)
+  
+            
+met_avg %>%
+  ggplot(aes(x = region, y = dew.point, fill = region)) +
+  stat_summary(fun.data = "mean_sdl", geom = "bar") +
+  stat_summary(fun.data = "mean_sdl", geom = "errorbar", width = 0.5)
+
+```
+
+Similarly to what was observed earlier, the mean wind speed in the west is higher than the mean windspeed in the east and the mean dew point is higher in the east than in the west. It is also noted that the confidence interval for the mean dew point and wind speeds observed in the west have a higher confidence interval than the corresponding values in the east.
+
+## Step 7
+
+```{r}
+library(leaflet)
+
+met_avg <- met_avg[!is.na(rh)]
+
+rh.pal<- colorNumeric(c('darkblue','blue','pink'), domain=met_avg$rh)
+
+leaflet(met_avg) %>% 
+  addProviderTiles('CartoDB.Positron') %>% 
+  addCircles(lat = ~lat, lng = ~lon,
+             label = ~paste0(round(rh,2)), color = ~ rh.pal(rh),
+             opacity = 1, fillOpacity = 1, radius = 500
+             ) %>% 
+  addLegend('bottomleft', pal=rh.pal, values=met_avg$rh,
+            title= "Relative Humidity", opacity = 1)
+
+
+```
+
+The relative humidity is greatest in the northeast and the Pacific Northwest in comparison to the mideast, southeast, and southwest. The lowest relative humidity was recorded outside of los angeles and the highest was recorded in Boise Idaho (see below).
+
+```{r}
+min <- met_avg[1]  # First observation.
+max <- met_avg[.N] # Last obs, .N is a special symbol in data.table
+leaflet() %>% 
+  addProviderTiles('CartoDB.Positron') %>% 
+  addCircles(
+    data = min,
+    lat = ~lat, lng = ~lon, popup = "Min Rel Humidity.",
+    opacity = 1, fillOpacity = 1, radius = 400, color = "pink"
+    ) %>%
+  addCircles(
+    data = max,
+    lat = ~lat, lng = ~lon, popup = "Max Rel Humidity.",
+    opacity=1, fillOpacity=1, radius = 400, color = "darkblue"
+    )
+```
+
+## Step 8
+
+```{r}
+library(gganimate)
+
+met_avg2 <- met_avg[met_avg$dew.point > 24]
+
+ggplot(met_avg2, aes(group = region, x = dew.point, y = rh)) + 
+  geom_boxplot() +
+  transition_states(
+    wind.sp,
+    transition_length = 2,
+    state_length = 1
+  ) +
+  enter_fade() + 
+  exit_shrink() 
+ 
+  
+ 
+```
